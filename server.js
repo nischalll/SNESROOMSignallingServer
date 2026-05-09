@@ -6,7 +6,7 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 10 * 1024 * 1024  // 10 MB — for ROM chunk relay
+  maxHttpBufferSize: 1 * 1024 * 1024  // 1 MB — enough for ROM chunks + state sync
 });
 
 const PORT = process.env.PORT || 9000;
