@@ -1,23 +1,66 @@
 const express = require('express');
-const { ExpressPeerServer } = require('peer');
+const http    = require('http');
+const { Server } = require('socket.io');
 
-const app = express();
-// Default to 9000 for local testing, or use hosting provider's PORT
+const app    = express();
+const server = http.createServer(app);
+const io     = new Server(server, {
+  cors: { origin: '*' },
+  maxHttpBufferSize: 10 * 1024 * 1024  // 10 MB — for ROM chunk relay
+});
+
 const PORT = process.env.PORT || 9000;
 
-const server = app.listen(PORT, () => {
-  console.log(`[NESROOM] Custom PeerServer running on port ${PORT}`);
+// rooms: { [code]: { hostId, guestId|null } }
+const rooms = {};
+
+io.on('connection', socket => {
+  console.log('[+] connected:', socket.id);
+
+  // HOST creates a room
+  socket.on('host', code => {
+    rooms[code] = { hostId: socket.id, guestId: null };
+    socket.join(code);
+    socket.emit('host_ok', code);
+    console.log(`[room] created: ${code} by ${socket.id}`);
+  });
+
+  // GUEST joins a room
+  socket.on('join', code => {
+    const room = rooms[code];
+    if (!room) { socket.emit('join_err', 'Room not found. Check the code.'); return; }
+    if (room.guestId) { socket.emit('join_err', 'Room is full.'); return; }
+    room.guestId = socket.id;
+    socket.join(code);
+    socket.emit('join_ok', code);
+    io.to(room.hostId).emit('peer_joined');
+    console.log(`[room] ${socket.id} joined ${code}`);
+  });
+
+  // Relay — forward any message to the other peer
+  socket.on('relay', ({ code, msg }) => {
+    const room = rooms[code];
+    if (!room) return;
+    const targetId = socket.id === room.hostId ? room.guestId : room.hostId;
+    if (targetId) io.to(targetId).emit('relay', msg);
+  });
+
+  // Cleanup on disconnect
+  socket.on('disconnect', () => {
+    for (const [code, room] of Object.entries(rooms)) {
+      if (room.hostId === socket.id || room.guestId === socket.id) {
+        io.to(code).emit('peer_left');
+        delete rooms[code];
+        console.log(`[room] ${code} closed`);
+        break;
+      }
+    }
+    console.log('[-] disconnected:', socket.id);
+  });
 });
 
-// Initialize PeerServer
-const peerServer = ExpressPeerServer(server, {
-  debug: true,
-  path: '/',
-  // You can add rate limiting or authentication here in the future if needed!
-});
+app.get('/health', (_, res) => res.send('OK'));
 
-// Serve the PeerJS endpoint
-app.use('/', peerServer);
-
-// Simple health check endpoint for your hosting provider
-app.get('/health', (req, res) => res.send('OK'));
+server.listen(PORT, () =>
+  console.log(`[NESROOM] Socket.IO server on port ${PORT}`)
+);
