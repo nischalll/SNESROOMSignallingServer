@@ -6,7 +6,7 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 1 * 1024 * 1024  // 1 MB — enough for ROM chunks + state sync
+  maxHttpBufferSize: 5 * 1024 * 1024  // 5 MB — allows large NES state snapshots without crashing
 });
 
 const PORT = process.env.PORT || 9000;
