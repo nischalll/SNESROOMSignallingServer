@@ -48,10 +48,15 @@ io.on('connection', socket => {
   // Cleanup on disconnect
   socket.on('disconnect', () => {
     for (const [code, room] of Object.entries(rooms)) {
-      if (room.hostId === socket.id || room.guestId === socket.id) {
-        io.to(code).emit('peer_left');
+      if (room.hostId === socket.id) {
+        io.to(code).emit('peer_left', { role: 'host' });
         delete rooms[code];
-        console.log(`[room] ${code} closed`);
+        console.log(`[room] ${code} closed (host left)`);
+        break;
+      } else if (room.guestId === socket.id) {
+        io.to(room.hostId).emit('peer_left', { role: 'p2' });
+        room.guestId = null;
+        console.log(`[room] ${code} guest left, room stays open`);
         break;
       }
     }
